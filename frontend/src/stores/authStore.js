@@ -1,0 +1,102 @@
+
+import { defineStore } from 'pinia'
+
+import api from '../services/api'
+
+export const useAuthStore = defineStore(
+
+    'auth',
+
+    {
+
+        state: () => ({
+
+            token:
+
+                localStorage.getItem('token')
+
+                || '',
+
+            user:
+
+                JSON.parse(
+
+                    localStorage.getItem('user')
+                )
+
+                || null
+        }),
+
+        getters: {
+
+            isAuthenticated:
+
+                (state) => !!state.token
+        },
+
+        actions: {
+
+            /*
+            |--------------------------------------------------------------------------
+            | LOGIN
+            |--------------------------------------------------------------------------
+            */
+
+            async login(form) {
+
+                const response = await api.post(
+
+                    '/login',
+
+                    form
+                )
+
+                this.token =
+
+                    response.data.token
+
+                this.user =
+
+                    response.data.user
+
+                localStorage.setItem(
+
+                    'token',
+
+                    this.token
+                )
+
+                localStorage.setItem(
+
+                    'user',
+
+                    JSON.stringify(this.user)
+                )
+            },
+
+            /*
+            |--------------------------------------------------------------------------
+            | LOGOUT
+            |--------------------------------------------------------------------------
+            */
+
+            logout() {
+
+                this.token = ''
+
+                this.user = null
+
+                localStorage.removeItem(
+
+                    'token'
+                )
+
+                localStorage.removeItem(
+
+                    'user'
+                )
+            }
+        }
+    }
+)
+
