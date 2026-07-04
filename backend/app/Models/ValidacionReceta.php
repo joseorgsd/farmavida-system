@@ -14,13 +14,15 @@ class ValidacionReceta extends Model
 
         'cliente_id',
 
-        'producto_id',
-
         'quimico_id',
 
-        'cantidad_aprobada',
-        
-        'tipo_venta',
+        'nombre_medico',
+
+        'cmp_medico',
+
+        'indicaciones',
+
+        'observaciones',
 
         'fecha_receta',
 
@@ -44,15 +46,6 @@ class ValidacionReceta extends Model
         );
     }
 
-    public function producto()
-    {
-
-        return $this->belongsTo(
-
-            Producto::class
-        );
-    }
-
     public function quimico()
     {
 
@@ -61,6 +54,21 @@ class ValidacionReceta extends Model
             User::class,
 
             'quimico_id'
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | DETALLES (PRODUCTOS SOLICITADOS, VIA DETALLE_VENTAS)
+    |--------------------------------------------------------------------------
+    */
+
+    public function detalles()
+    {
+
+        return $this->hasMany(
+
+            DetalleVenta::class
         );
     }
 }

@@ -1,6 +1,8 @@
 {
     "require-dev": {
-        "barryvdh/laravel-ide-helper": "^3.7"
+        "barryvdh/laravel-ide-helper": "^3.7",
+        "doctrine/dbal": "^4.4",
+        "laravel-lang/lang": "^15.31"
     },
     "require": {
         "spatie/laravel-permission": "^8.0"

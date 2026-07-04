@@ -19,6 +19,9 @@ class Venta extends Model
         'igv',
         'total',
         'tipo_comprobante',
+        'forma_pago',
+        'monto_pagado',
+        'vuelto',
         'estado'
 
     ];

@@ -1,4 +1,3 @@
-```vue
 <template>
 
 <div class="container-fluid">
@@ -26,6 +25,97 @@
 
             + Cliente
         </button>
+    </div>
+
+    <!--
+    |--------------------------------------------------------------------------
+    | CLIENTES CON RECETA APROBADA PENDIENTE DE VENTA
+    |--------------------------------------------------------------------------
+    -->
+
+    <div
+
+        v-if="validacionesAprobadasPendientes.length > 0"
+
+        class="card mb-4 shadow-sm border-success"
+    >
+
+        <div class="card-header bg-success bg-opacity-10">
+
+            Clientes con receta aprobada, listos para vender
+        </div>
+
+        <div class="card-body table-responsive">
+
+            <table class="table table-sm align-middle mb-0">
+
+                <thead>
+
+                    <tr>
+
+                        <th>Cliente</th>
+
+                        <th>Médico</th>
+
+                        <th>Productos</th>
+
+                        <th></th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    <tr
+
+                        v-for="validacion in validacionesAprobadasPendientes"
+
+                        :key="validacion.id"
+                    >
+
+                        <td>
+
+                            {{ validacion.cliente?.nombre }}
+                        </td>
+
+                        <td>
+
+                            {{ validacion.nombre_medico }}
+                        </td>
+
+                        <td>
+
+                            <ul class="mb-0 ps-3">
+
+                                <li
+
+                                    v-for="detalle in validacion.detalles"
+
+                                    :key="detalle.id"
+                                >
+
+                                    {{ detalle.producto?.nombre }}
+
+                                    ({{ detalle.cantidad }} - {{ detalle.tipo_venta }})
+                                </li>
+                            </ul>
+                        </td>
+
+                        <td>
+
+                            <button
+
+                                class="btn btn-success btn-sm"
+
+                                @click="cargarValidacionAprobada(validacion)"
+                            >
+
+                                Cargar al carrito
+                            </button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <!--
@@ -123,6 +213,11 @@
                             Stock:
 
                             {{ producto.stock_unidades }}
+
+                            <template v-if="producto.requiere_receta">
+
+                                (requiere receta)
+                            </template>
                         </option>
                     </select>
                 </div>
@@ -201,6 +296,35 @@
 
     <!--
     |--------------------------------------------------------------------------
+    | DERIVAR AL QUIMICO
+    |--------------------------------------------------------------------------
+    -->
+
+    <div
+
+        v-if="itemsRestringidosSinDerivar.length > 0"
+
+        class="alert alert-warning d-flex justify-content-between align-items-center"
+    >
+
+        <span>
+
+            {{ itemsRestringidosSinDerivar.length }} producto(s) requieren receta y aún no se han derivado.
+        </span>
+
+        <button
+
+            class="btn btn-warning btn-sm"
+
+            @click="derivarCliente"
+        >
+
+            Derivar al Químico
+        </button>
+    </div>
+
+    <!--
+    |--------------------------------------------------------------------------
     | DETALLE
     |--------------------------------------------------------------------------
     -->
@@ -260,30 +384,38 @@
                                     Requiere receta
                                 </span>
 
-                                <!-- VALIDAR -->
-
-                                <button
-
-                                    v-if="!item.validado"
-
-                                    class="btn btn-warning btn-sm ms-2"
-
-                                    @click="solicitarValidacion(item)"
-                                >
-
-                                    Solicitar Validación
-                                </button>
-
                                 <!-- VALIDADO -->
 
                                 <span
 
-                                    v-else
+                                    v-if="item.validado"
 
                                     class="badge bg-success ms-2"
                                 >
 
                                     Validado
+                                </span>
+
+                                <!-- DERIVADO, EN PROCESO -->
+
+                                <template v-else-if="item.derivado">
+
+                                    <span class="badge bg-warning ms-2">
+
+                                        En proceso con el químico
+                                    </span>
+                                </template>
+
+                                <!-- SIN DERIVAR -->
+
+                                <span
+
+                                    v-else
+
+                                    class="badge bg-secondary ms-2"
+                                >
+
+                                    Sin derivar
                                 </span>
                             </div>
                         </td>
@@ -540,7 +672,9 @@ import {
 
     computed,
 
-    onMounted
+    onMounted,
+
+    onUnmounted
 
 } from 'vue'
 
@@ -570,7 +704,13 @@ const cantidad = ref(1)
 
 const tipoVenta = ref('CAJA')
 
+const validacionesAprobadasPendientes = ref([])
+
+const idsValidacionesCargadas = ref(new Set())
+
 let modalCliente = null
+
+let intervaloValidaciones = null
 
 /*
 |--------------------------------------------------------------------------
@@ -668,6 +808,126 @@ const obtenerClientes = async () => {
 
 /*
 |--------------------------------------------------------------------------
+| VALIDACIONES APROBADAS PENDIENTES DE VENTA
+|--------------------------------------------------------------------------
+*/
+
+const obtenerValidacionesAprobadasPendientes = async () => {
+
+    try {
+
+        const response =
+
+            await api.get(
+
+                '/validaciones-receta/pendientes-venta'
+            )
+
+        validacionesAprobadasPendientes.value =
+
+            response.data.data.filter(
+
+                v => !idsValidacionesCargadas.value.has(v.id)
+            )
+
+    } catch (error) {
+
+        console.log(error)
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| PRECIO SEGÚN TIPO DE VENTA
+|--------------------------------------------------------------------------
+*/
+
+const precioSegunTipo = (producto, tipoVentaItem) => {
+
+    if (tipoVentaItem === 'CAJA') {
+
+        return parseFloat(producto.precio_venta)
+    }
+
+    if (tipoVentaItem === 'BLISTER') {
+
+        return parseFloat(producto.precio_blister)
+    }
+
+    return parseFloat(producto.precio_unidad)
+}
+
+/*
+|--------------------------------------------------------------------------
+| CARGAR VALIDACIÓN APROBADA AL CARRITO
+|--------------------------------------------------------------------------
+*/
+
+const cargarValidacionAprobada = (validacion) => {
+
+    venta.value.cliente_id =
+
+        validacion.cliente_id
+
+    validacion.detalles.forEach(detalle => {
+
+        const producto =
+
+            detalle.producto
+
+        const precio =
+
+            precioSegunTipo(
+
+                producto,
+
+                detalle.tipo_venta
+            )
+
+        const subtotal =
+
+            precio * detalle.cantidad
+
+        detalleVenta.value.push({
+
+            producto,
+
+            producto_id: producto.id,
+
+            tipo_venta: detalle.tipo_venta,
+
+            cantidad: detalle.cantidad,
+
+            precio,
+
+            subtotal,
+
+            derivado: true,
+
+            validado: true
+        })
+    })
+
+    idsValidacionesCargadas.value.add(
+
+        validacion.id
+    )
+
+    validacionesAprobadasPendientes.value =
+
+        validacionesAprobadasPendientes.value.filter(
+
+            v => v.id !== validacion.id
+        )
+
+    alert(
+
+        'Productos cargados al carrito. Puede continuar con la venta.'
+    )
+}
+
+/*
+|--------------------------------------------------------------------------
 | AGREGAR PRODUCTO
 |--------------------------------------------------------------------------
 */
@@ -681,52 +941,14 @@ const agregarProducto = () => {
         return
     }
 
-    let precio = 0
+    const precio =
 
-    /*
-    |--------------------------------------------------------------------------
-    | PRECIO
-    |--------------------------------------------------------------------------
-    */
+        precioSegunTipo(
 
-    if (tipoVenta.value === 'CAJA') {
+            productoSeleccionado.value,
 
-        precio =
-
-            parseFloat(
-
-                productoSeleccionado.value.precio_venta
-            )
-    }
-
-    else if (
-
-        tipoVenta.value === 'BLISTER'
-    ) {
-
-        precio =
-
-            parseFloat(
-
-                productoSeleccionado.value.precio_blister
-            )
-    }
-
-    else {
-
-        precio =
-
-            parseFloat(
-
-                productoSeleccionado.value.precio_unidad
-            )
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | SUBTOTAL
-    |--------------------------------------------------------------------------
-    */
+            tipoVenta.value
+        )
 
     const subtotal =
 
@@ -753,6 +975,8 @@ const agregarProducto = () => {
         precio,
 
         subtotal,
+
+        derivado: false,
 
         validado: false
     })
@@ -795,20 +1019,55 @@ const totalVenta = computed(() => {
 
 /*
 |--------------------------------------------------------------------------
-| VALIDACIÓN
+| RESTRINGIDOS SIN DERIVAR
 |--------------------------------------------------------------------------
 */
 
-const solicitarValidacion = async (item) => {
+const itemsRestringidosSinDerivar = computed(() => {
+
+    return detalleVenta.value.filter(
+
+        item =>
+
+            item.producto.requiere_receta
+
+            &&
+
+            !item.derivado
+
+            &&
+
+            !item.validado
+    )
+})
+
+/*
+|--------------------------------------------------------------------------
+| DERIVAR CLIENTE (SOLO CLIENTE + PRODUCTOS, SIN DATOS MEDICOS)
+|--------------------------------------------------------------------------
+*/
+
+const derivarCliente = async () => {
+
+    if (!venta.value.cliente_id) {
+
+        alert('Seleccione cliente')
+
+        return
+    }
 
     try {
 
-        if (!venta.value.cliente_id) {
+        const productosDerivar =
 
-            alert('Seleccione cliente')
+            itemsRestringidosSinDerivar.value.map(item => ({
 
-            return
-        }
+                producto_id: item.producto.id,
+
+                cantidad: item.cantidad,
+
+                tipo_venta: item.tipo_venta
+            }))
 
         await api.post(
 
@@ -820,20 +1079,16 @@ const solicitarValidacion = async (item) => {
 
                     venta.value.cliente_id,
 
-                producto_id:
-
-                    item.producto.id,
-
-                cantidad_aprobada:
-
-                    item.cantidad
+                productos: productosDerivar
             }
         )
 
-        alert(
+        itemsRestringidosSinDerivar.value.forEach(item => {
 
-            'Solicitud enviada al químico farmacéutico'
-        )
+            item.derivado = true
+        })
+
+        alert('Cliente derivado al químico farmacéutico')
 
     } catch (error) {
 
@@ -841,8 +1096,105 @@ const solicitarValidacion = async (item) => {
 
         alert(
 
-            'Error al solicitar validación'
+            error.response?.data?.message
+
+            ||
+
+            'Error al derivar cliente'
         )
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| POLLING DE VALIDACIONES (ITEMS EN CARRITO YA DERIVADOS)
+|--------------------------------------------------------------------------
+*/
+
+const chequearValidacionesPendientes = async () => {
+
+    const pendientes =
+
+        detalleVenta.value.filter(
+
+            item =>
+
+                item.producto.requiere_receta
+
+                &&
+
+                item.derivado
+
+                &&
+
+                !item.validado
+        )
+
+    if (pendientes.length === 0) {
+
+        return
+    }
+
+    try {
+
+        const response =
+
+            await api.get('/validaciones-receta')
+
+        const validaciones =
+
+            response.data.data
+
+        pendientes.forEach(item => {
+
+            const encontrado =
+
+                validaciones.some(v => {
+
+                    if (
+
+                        v.cliente_id != venta.value.cliente_id
+
+                        ||
+
+                        v.estado !== 'APROBADO'
+
+                        ||
+
+                        v.usado
+                    ) {
+
+                        return false
+                    }
+
+                    return v.detalles?.some(d =>
+
+                        d.producto_id === item.producto.id
+
+                        &&
+
+                        d.tipo_venta === item.tipo_venta
+
+                        &&
+
+                        Number(d.cantidad) >= Number(item.cantidad)
+                    )
+                })
+
+            if (encontrado && !item.validado) {
+
+                item.validado = true
+
+                alert(
+
+                    `El químico validó: ${item.producto.nombre}`
+                )
+            }
+        })
+
+    } catch (error) {
+
+        console.log(error)
     }
 }
 
@@ -855,71 +1207,6 @@ const solicitarValidacion = async (item) => {
 const registrarVenta = async () => {
 
     try {
-
-        /*
-        |--------------------------------------------------------------------------
-        | VALIDAR RESTRINGIDOS
-        |--------------------------------------------------------------------------
-        */
-
-        for (const item of detalleVenta.value) {
-
-            if (
-
-                item.producto.requiere_receta
-            ) {
-
-                const response =
-
-                    await api.get(
-
-                        '/validaciones-receta'
-                    )
-
-                const validacion =
-
-                    response.data.data.find(v =>
-
-                        v.cliente_id ==
-
-                        venta.value.cliente_id
-
-                        &&
-
-                        v.producto_id ==
-
-                        item.producto.id
-
-                        &&
-
-                        v.estado ==
-
-                        'APROBADO'
-
-                        &&
-
-                        v.usado == false
-                    )
-
-                if (!validacion) {
-
-                    alert(
-
-                        'Producto requiere aprobación del químico farmacéutico'
-                    )
-
-                    return
-                }
-
-                item.validado = true
-            }
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | REGISTRAR
-        |--------------------------------------------------------------------------
-        */
 
         const response =
 
@@ -937,13 +1224,16 @@ const registrarVenta = async () => {
 
                         'BOLETA',
 
-                    total:
-
-                        totalVenta.value,
-
                     productos:
 
-                        detalleVenta.value
+                        detalleVenta.value.map(item => ({
+
+                            producto_id: item.producto.id,
+
+                            cantidad: item.cantidad,
+
+                            tipo_venta: item.tipo_venta
+                        }))
                 }
             )
 
@@ -955,6 +1245,8 @@ const registrarVenta = async () => {
         console.log(response.data)
 
         detalleVenta.value = []
+
+        await obtenerValidacionesAprobadasPendientes()
 
     } catch (error) {
 
@@ -1061,6 +1353,24 @@ onMounted(async () => {
     await obtenerProductos()
 
     await obtenerClientes()
+
+    await obtenerValidacionesAprobadasPendientes()
+
+    intervaloValidaciones = setInterval(() => {
+
+        chequearValidacionesPendientes()
+
+        obtenerValidacionesAprobadasPendientes()
+
+    }, 8000)
+})
+
+onUnmounted(() => {
+
+    if (intervaloValidaciones) {
+
+        clearInterval(intervaloValidaciones)
+    }
 })
 
 </script>
@@ -1072,29 +1382,31 @@ onMounted(async () => {
 /* FARMAVIDA — Bootstrap overrides                        */
 /* ===================================================== */
 
-/* Fondo de página */
 .container,
 .container-fluid {
     color: var(--white);
 }
 
-/* Títulos */
 h1, h2, h3, h4, h5 {
     color: var(--white);
 }
 
-/* Cards */
 .card {
     background: var(--navy-800);
     border: 1px solid var(--white-10);
     color: var(--white);
 }
 
+.card-header {
+    background: var(--navy-700);
+    color: var(--white);
+    border-bottom: 1px solid var(--white-10);
+}
+
 .card-body {
     background: var(--navy-800);
 }
 
-/* Tabla */
 .table {
     color: var(--white);
     border-color: var(--white-10);
@@ -1131,7 +1443,6 @@ thead.table-light th {
     color: var(--white);
 }
 
-/* Formularios */
 .form-control,
 .form-select {
     background: var(--navy-700);
@@ -1155,7 +1466,6 @@ thead.table-light th {
     color: var(--white-80);
 }
 
-/* Modal */
 .modal-content {
     background: var(--navy-800);
     border: 1px solid var(--white-10);
@@ -1178,7 +1488,6 @@ thead.table-light th {
     filter: invert(1) brightness(2);
 }
 
-/* Botones */
 .btn-primary {
     background: var(--blue-500);
     border-color: var(--blue-500);
@@ -1201,7 +1510,6 @@ thead.table-light th {
     color: var(--white);
 }
 
-/* Select options */
 select option {
     background: var(--navy-800);
     color: var(--white);

@@ -647,7 +647,7 @@ const login = async () => {
     padding: 10px 16px;
 
     font-size: 14px;
-
+    color: var(--gray-800);
     transition: 0.2s;
 }
 
@@ -660,7 +660,7 @@ const login = async () => {
 
     outline: none;
 
-    border-color: transparent;
+    border-color: blue;
 
     box-shadow: 0 0 0 2px var(--blue-500);
 }

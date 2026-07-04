@@ -1,217 +1,221 @@
-<?php
-
-namespace App\Http\Controllers\Api;
-
-use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Auth;
-
-use App\Models\Venta;
-use App\Models\DetalleVenta;
-use App\Models\Producto;
-use App\Models\ValidacionReceta;
-
-class VentaController extends Controller
+public function store(Request $request)
 {
 
     /*
     |--------------------------------------------------------------------------
-    | LISTAR VENTAS
+    | VALIDACIONES
     |--------------------------------------------------------------------------
     */
 
-    public function index()
-    {
+    $request->validate([
 
-        $ventas = Venta::with([
+        'cliente_id' =>
 
-            'cliente',
+            'required|exists:clientes,id',
 
-            'usuario'
-        ])
-        ->latest()
-        ->get();
+        'tipo_comprobante' =>
 
-        return response()->json([
+            'required|string',
 
-            'success' => true,
+        'forma_pago' =>
 
-            'data' => $ventas
-        ]);
-    }
+            'required|in:EFECTIVO,YAPE,PLIN,TARJETA',
 
-    /*
-    |--------------------------------------------------------------------------
-    | REGISTRAR VENTA
-    |--------------------------------------------------------------------------
-    */
+        'monto_pagado' =>
 
-    public function store(Request $request)
-    {
+            'nullable|numeric|min:0',
+
+        'productos' =>
+
+            'required|array|min:1',
+
+        'productos.*.producto_id' =>
+
+            'required|exists:productos,id',
+
+        'productos.*.cantidad' =>
+
+            'required|numeric|min:1',
+
+        'productos.*.tipo_venta' =>
+
+            'required|string'
+    ], [
+
+        'cliente_id.required' =>
+
+            'Debe seleccionar un cliente',
+
+        'cliente_id.exists' =>
+
+            'El cliente seleccionado no existe',
+
+        'tipo_comprobante.required' =>
+
+            'Debe seleccionar un tipo de comprobante',
+
+        'forma_pago.required' =>
+
+            'Debe seleccionar una forma de pago',
+
+        'forma_pago.in' =>
+
+            'La forma de pago no es válida',
+
+        'monto_pagado.numeric' =>
+
+            'El monto pagado debe ser un número',
+
+        'productos.required' =>
+
+            'Debe agregar al menos un producto',
+
+        'productos.min' =>
+
+            'Debe agregar al menos un producto',
+
+        'productos.*.producto_id.required' =>
+
+            'Debe seleccionar un producto',
+
+        'productos.*.producto_id.exists' =>
+
+            'Uno de los productos seleccionados no existe',
+
+        'productos.*.cantidad.required' =>
+
+            'Debe indicar la cantidad',
+
+        'productos.*.cantidad.numeric' =>
+
+            'La cantidad debe ser un número',
+
+        'productos.*.cantidad.min' =>
+
+            'La cantidad debe ser mayor a 0',
+
+        'productos.*.tipo_venta.required' =>
+
+            'Debe seleccionar el tipo de venta'
+    ]);
+
+    DB::beginTransaction();
+
+    try {
 
         /*
         |--------------------------------------------------------------------------
-        | VALIDACIONES
+        | TOTAL
         |--------------------------------------------------------------------------
         */
 
-        $request->validate([
+        $total = 0;
 
-            'cliente_id' =>
+        $detallesReceta = [];
 
-                'required|exists:clientes,id',
+        $validacionesInvolucradas = [];
 
-            'tipo_comprobante' =>
+        foreach (
 
-                'required|string',
+            $request->productos
 
-            'productos' =>
+            as $index => $item
 
-                'required|array|min:1',
+        ) {
 
-            'productos.*.producto_id' =>
+            $producto = Producto::findOrFail(
 
-                'required|exists:productos,id',
+                $item['producto_id']
+            );
 
-            'productos.*.cantidad' =>
+            $precio = $this->precioSegunTipo(
 
-                'required|numeric|min:1',
+                $producto,
 
-            'productos.*.tipo_venta' =>
+                $item['tipo_venta']
+            );
 
-                'required|string'
-        ]);
+            $cantidadDescontar = $this->cantidadEnUnidades(
 
-        DB::beginTransaction();
+                $producto,
 
-        try {
+                $item['tipo_venta'],
+
+                $item['cantidad']
+            );
 
             /*
             |--------------------------------------------------------------------------
-            | TOTAL
+            | VALIDAR STOCK
             |--------------------------------------------------------------------------
             */
 
-            $total = 0;
+            if (
 
-            foreach (
+                $producto->stock_unidades
 
-                $request->productos
-
-                as $item
-
+                < $cantidadDescontar
             ) {
 
-                $producto = Producto::findOrFail(
+                DB::rollBack();
 
-                    $item['producto_id']
-                );
+                return response()->json([
 
-                /*
-                |--------------------------------------------------------------------------
-                | PRECIO SEGÚN TIPO
-                |--------------------------------------------------------------------------
-                */
+                    'success' => false,
 
-                $precio = 0;
+                    'message' =>
 
-                if (
+                        'Stock insuficiente para '
 
-                    $item['tipo_venta']
+                        . $producto->nombre
+                ], 400);
+            }
 
-                    === 'CAJA'
-                ) {
+            /*
+            |--------------------------------------------------------------------------
+            | VALIDACIÓN RECETA (PRODUCTO CONTROLADO)
+            |--------------------------------------------------------------------------
+            */
 
-                    $precio =
+            if ($producto->requiere_receta) {
 
-                        $producto->precio_venta;
-                }
+                $detalleReceta =
 
-                elseif (
+                    DetalleVenta::whereNull('venta_id')
 
-                    $item['tipo_venta']
+                    ->where(
 
-                    === 'BLISTER'
-                ) {
+                        'producto_id',
 
-                    $precio =
+                        $producto->id
+                    )
 
-                        $producto->precio_blister;
-                }
+                    ->where(
 
-                else {
+                        'tipo_venta',
 
-                    $precio =
+                        $item['tipo_venta']
+                    )
 
-                        $producto->precio_unidad;
-                }
+                    ->whereHas('validacionReceta', function ($q) use ($request) {
 
-                /*
-                |--------------------------------------------------------------------------
-                | CONVERSIÓN A UNIDADES
-                |--------------------------------------------------------------------------
-                */
+                        $q->where(
 
-                $cantidadDescontar = 0;
+                            'cliente_id',
 
-                if (
+                            $request->cliente_id
+                        )
 
-                    $item['tipo_venta']
+                        ->where('estado', 'APROBADO')
 
-                    === 'CAJA'
-                ) {
+                        ->where('usado', false);
+                    })
 
-                    $cantidadDescontar =
+                    ->first();
 
-                        $item['cantidad']
+                if (!$detalleReceta) {
 
-                        *
-
-                        $producto->blisters_por_caja
-
-                        *
-
-                        $producto->unidades_por_blister;
-                }
-
-                elseif (
-
-                    $item['tipo_venta']
-
-                    === 'BLISTER'
-                ) {
-
-                    $cantidadDescontar =
-
-                        $item['cantidad']
-
-                        *
-
-                        $producto->unidades_por_blister;
-                }
-
-                else {
-
-                    $cantidadDescontar =
-
-                        $item['cantidad'];
-                }
-
-                /*
-                |--------------------------------------------------------------------------
-                | VALIDAR STOCK
-                |--------------------------------------------------------------------------
-                */
-
-                if (
-
-                    $producto->stock_unidades
-
-                    <
-
-                    $cantidadDescontar
-                ) {
+                    DB::rollBack();
 
                     return response()->json([
 
@@ -219,266 +223,182 @@ class VentaController extends Controller
 
                         'message' =>
 
-                            'Stock insuficiente para '
-
-                            .
-
-                            $producto->nombre
-                    ], 400);
+                            'Producto requiere validación del químico farmacéutico'
+                    ], 403);
                 }
-
-                /*
-                |--------------------------------------------------------------------------
-                | VALIDACIÓN RECETA
-                |--------------------------------------------------------------------------
-                */
 
                 if (
 
-                    $producto->requiere_receta
+                    $item['cantidad']
+
+                    > $detalleReceta->cantidad
                 ) {
 
-                    $validacion =
+                    DB::rollBack();
 
-                        ValidacionReceta::where(
+                    return response()->json([
 
-                            'cliente_id',
+                        'success' => false,
 
-                            $request->cliente_id
-                        )
+                        'message' =>
 
-                        ->where(
-
-                            'producto_id',
-
-                            $producto->id
-                        )
-
-                        ->where(
-
-                            'tipo_venta',
-
-                            $item['tipo_venta']
-                        )
-
-                        ->where(
-
-                            'estado',
-
-                            'APROBADO'
-                        )
-
-                        ->where(
-
-                            'usado',
-
-                            false
-                        )
-
-                        ->first();
-
-                    if (!$validacion) {
-
-                        return response()->json([
-
-                            'success' => false,
-
-                            'message' =>
-
-                                'Producto requiere validación del químico farmacéutico'
-                        ], 403);
-                    }
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | VALIDAR CANTIDAD
-                    |--------------------------------------------------------------------------
-                    */
-
-                    if (
-
-                        $item['cantidad']
-
-                        >
-
-                        $validacion->cantidad_aprobada
-                    ) {
-
-                        return response()->json([
-
-                            'success' => false,
-
-                            'message' =>
-
-                                'Cantidad excede receta aprobada'
-                        ], 403);
-                    }
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | MARCAR USADO
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $validacion->usado = true;
-
-                    $validacion->save();
+                            'Cantidad excede receta aprobada'
+                    ], 403);
                 }
 
-                /*
-                |--------------------------------------------------------------------------
-                | SUBTOTAL
-                |--------------------------------------------------------------------------
-                */
+                $detallesReceta[$index] = $detalleReceta;
 
-                $subtotalProducto =
+                $validacionesInvolucradas[$detalleReceta->validacion_receta_id] =
 
-                    $precio
-
-                    *
-
-                    $item['cantidad'];
-
-                $total += $subtotalProducto;
+                    $detalleReceta->validacion_receta_id;
             }
 
-            /*
-            |--------------------------------------------------------------------------
-            | SUBTOTAL / IGV
-            |--------------------------------------------------------------------------
-            */
+            $total += $precio * $item['cantidad'];
+        }
 
-            $subtotal =
+        /*
+        |--------------------------------------------------------------------------
+        | SUBTOTAL / IGV
+        |--------------------------------------------------------------------------
+        */
 
-                $total / 1.18;
+        $subtotal = $total / 1.18;
 
-            $igv =
+        $igv = $total - $subtotal;
 
-                $total - $subtotal;
+        /*
+        |--------------------------------------------------------------------------
+        | CALCULO DE VUELTO (SOLO EFECTIVO)
+        |--------------------------------------------------------------------------
+        */
 
-            /*
-            |--------------------------------------------------------------------------
-            | CREAR VENTA
-            |--------------------------------------------------------------------------
-            */
+        $montoPagado = null;
 
-            $venta = Venta::create([
+        $vuelto = 0;
 
-                'numero_venta' =>
+        if ($request->forma_pago === 'EFECTIVO') {
 
-                    'V-' . time(),
+            $montoPagado =
 
-                'cliente_id' =>
+                $request->monto_pagado ?? 0;
 
-                    $request->cliente_id,
+            if ($montoPagado < round($total, 2)) {
 
-                'user_id' =>
+                DB::rollBack();
 
-                    Auth::id() ?? 1,
+                return response()->json([
 
-                'tipo_comprobante' =>
+                    'success' => false,
 
-                    $request->tipo_comprobante,
+                    'message' =>
 
-                'subtotal' =>
+                        'El monto pagado es menor al total de la venta'
+                ], 422);
+            }
 
-                    round(
-                        $subtotal,
-                        2
-                    ),
+            $vuelto =
 
-                'igv' =>
+                $montoPagado - round($total, 2);
 
-                    round(
-                        $igv,
-                        2
-                    ),
+        } else {
 
-                'total' =>
+            $montoPagado = round($total, 2);
 
-                    round(
-                        $total,
-                        2
-                    )
-            ]);
+            $vuelto = 0;
+        }
 
-            /*
-            |--------------------------------------------------------------------------
-            | DETALLE VENTA
-            |--------------------------------------------------------------------------
-            */
+        /*
+        |--------------------------------------------------------------------------
+        | CREAR VENTA
+        |--------------------------------------------------------------------------
+        */
 
-            foreach (
+        $venta = Venta::create([
 
-                $request->productos
+            'numero_venta' =>
 
-                as $item
+                'V-' . time(),
 
-            ) {
+            'cliente_id' =>
 
-                $producto = Producto::findOrFail(
+                $request->cliente_id,
 
-                    $item['producto_id']
-                );
+            'user_id' =>
 
-                /*
-                |--------------------------------------------------------------------------
-                | PRECIO
-                |--------------------------------------------------------------------------
-                */
+                Auth::id() ?? 1,
 
-                $precio = 0;
+            'tipo_comprobante' =>
 
-                if (
+                $request->tipo_comprobante,
 
-                    $item['tipo_venta']
+            'forma_pago' =>
 
-                    === 'CAJA'
-                ) {
+                $request->forma_pago,
 
-                    $precio =
+            'subtotal' =>
 
-                        $producto->precio_venta;
-                }
+                round($subtotal, 2),
 
-                elseif (
+            'igv' =>
 
-                    $item['tipo_venta']
+                round($igv, 2),
 
-                    === 'BLISTER'
-                ) {
+            'total' =>
 
-                    $precio =
+                round($total, 2),
 
-                        $producto->precio_blister;
-                }
+            'monto_pagado' =>
 
-                else {
+                round($montoPagado, 2),
 
-                    $precio =
+            'vuelto' =>
 
-                        $producto->precio_unidad;
-                }
+                round($vuelto, 2)
+        ]);
 
-                /*
-                |--------------------------------------------------------------------------
-                | SUBTOTAL DETALLE
-                |--------------------------------------------------------------------------
-                */
+        /*
+        |--------------------------------------------------------------------------
+        | DETALLE VENTA + DESCUENTO DE STOCK
+        |--------------------------------------------------------------------------
+        */
 
-                $subtotalDetalle =
+        foreach (
 
-                    $precio
+            $request->productos
 
-                    *
+            as $index => $item
 
-                    $item['cantidad'];
+        ) {
 
-                /*
-                |--------------------------------------------------------------------------
-                | CREAR DETALLE
-                |--------------------------------------------------------------------------
-                */
+            $producto = Producto::findOrFail(
+
+                $item['producto_id']
+            );
+
+            $precio = $this->precioSegunTipo(
+
+                $producto,
+
+                $item['tipo_venta']
+            );
+
+            $subtotalDetalle =
+
+                $precio * $item['cantidad'];
+
+            if (isset($detallesReceta[$index])) {
+
+                $detalle = $detallesReceta[$index];
+
+                $detalle->venta_id = $venta->id;
+
+                $detalle->precio_unitario = $precio;
+
+                $detalle->subtotal = $subtotalDetalle;
+
+                $detalle->save();
+
+            } else {
 
                 DetalleVenta::create([
 
@@ -506,215 +426,89 @@ class VentaController extends Controller
 
                         $subtotalDetalle
                 ]);
-
-                /*
-                |--------------------------------------------------------------------------
-                | CONVERSIÓN STOCK
-                |--------------------------------------------------------------------------
-                */
-
-                $cantidadDescontar = 0;
-
-                if (
-
-                    $item['tipo_venta']
-
-                    === 'CAJA'
-                ) {
-
-                    $cantidadDescontar =
-
-                        $item['cantidad']
-
-                        *
-
-                        $producto->blisters_por_caja
-
-                        *
-
-                        $producto->unidades_por_blister;
-                }
-
-                elseif (
-
-                    $item['tipo_venta']
-
-                    === 'BLISTER'
-                ) {
-
-                    $cantidadDescontar =
-
-                        $item['cantidad']
-
-                        *
-
-                        $producto->unidades_por_blister;
-                }
-
-                else {
-
-                    $cantidadDescontar =
-
-                        $item['cantidad'];
-                }
-
-                /*
-                |--------------------------------------------------------------------------
-                | DESCONTAR STOCK
-                |--------------------------------------------------------------------------
-                */
-
-                $producto->stock_unidades =
-
-                    $producto->stock_unidades
-
-                    -
-
-                    $cantidadDescontar;
-
-                $producto->save();
             }
 
-            DB::commit();
+            $cantidadDescontar = $this->cantidadEnUnidades(
 
-            return response()->json([
+                $producto,
 
-                'success' => true,
+                $item['tipo_venta'],
 
-                'message' =>
+                $item['cantidad']
+            );
 
-                    'Venta registrada correctamente',
+            $producto->stock_unidades =
 
-                'data' => $venta
-            ]);
+                $producto->stock_unidades
+
+                - $cantidadDescontar;
+
+            $producto->save();
         }
 
-        catch (\Exception $e) {
+        /*
+        |--------------------------------------------------------------------------
+        | CERRAR VALIDACIONES USADAS EN ESTA VENTA
+        |--------------------------------------------------------------------------
+        */
 
-            DB::rollBack();
+        foreach (
 
-            return response()->json([
+            $validacionesInvolucradas
 
-                'success' => false,
+            as $validacionId
 
-                'error' =>
+        ) {
 
-                    $e->getMessage(),
+            $validacion =
 
-                'line' =>
+                ValidacionReceta::find($validacionId);
 
-                    $e->getLine(),
+            if ($validacion) {
 
-                'file' =>
+                $validacion->estado = 'VENDIDO';
 
-                    $e->getFile()
-            ], 500);
+                $validacion->usado = true;
+
+                $validacion->save();
+            }
         }
-    }
 
-    /*
-    |--------------------------------------------------------------------------
-    | MOSTRAR VENTA
-    |--------------------------------------------------------------------------
-    */
-
-    public function show(int $id)
-    {
-
-        $venta = Venta::with([
-
-            'cliente',
-
-            'usuario'
-        ])
-        ->findOrFail($id);
+        DB::commit();
 
         return response()->json([
 
             'success' => true,
 
-            'data' => $venta
+            'message' =>
+
+                'Venta registrada correctamente',
+
+            'data' =>
+
+                $venta->load('detalles.producto', 'cliente')
         ]);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | ELIMINAR VENTA
-    |--------------------------------------------------------------------------
-    */
+    catch (\Exception $e) {
 
-    public function destroy(int $id)
-    {
+        DB::rollBack();
 
-        DB::beginTransaction();
+        return response()->json([
 
-        try {
+            'success' => false,
 
-            $venta = Venta::findOrFail($id);
+            'error' =>
 
-            $detalles = DetalleVenta::where(
+                $e->getMessage(),
 
-                'venta_id',
+            'line' =>
 
-                $venta->id
-            )->get();
+                $e->getLine(),
 
-            foreach (
+            'file' =>
 
-                $detalles
-
-                as $detalle
-
-            ) {
-
-                $producto = Producto::find(
-
-                    $detalle->producto_id
-                );
-
-                if ($producto) {
-
-                    $producto->stock_unidades +=
-
-                        $detalle->cantidad;
-
-                    $producto->save();
-                }
-            }
-
-            DetalleVenta::where(
-
-                'venta_id',
-
-                $venta->id
-            )->delete();
-
-            $venta->delete();
-
-            DB::commit();
-
-            return response()->json([
-
-                'success' => true,
-
-                'message' =>
-
-                    'Venta eliminada correctamente'
-            ]);
-        }
-
-        catch (\Exception $e) {
-
-            DB::rollBack();
-
-            return response()->json([
-
-                'success' => false,
-
-                'error' =>
-
-                    $e->getMessage()
-            ], 500);
-        }
+                $e->getFile()
+        ], 500);
     }
 }

@@ -11,18 +11,6 @@
 
             Validación de Recetas
         </h2>
-
-        <button
-
-            class="btn btn-primary"
-
-            data-bs-toggle="modal"
-
-            data-bs-target="#modalNuevaValidacion"
-        >
-
-            + Nueva Validación
-        </button>
     </div>
 
     <!-- TABLA -->
@@ -41,11 +29,9 @@
 
                         <th>Cliente</th>
 
-                        <th>Producto</th>
+                        <th>Médico</th>
 
-                        <th>Cantidad</th>
-
-                        <th>Tipo</th>
+                        <th>Productos</th>
 
                         <th>Estado</th>
 
@@ -74,17 +60,40 @@
 
                         <td>
 
-                            {{ item.producto?.nombre }}
+                            <template v-if="item.nombre_medico">
+
+                                <div>{{ item.nombre_medico }}</div>
+
+                                <small class="text-muted">CMP: {{ item.cmp_medico }}</small>
+                            </template>
+
+                            <span
+
+                                v-else
+
+                                class="text-muted"
+                            >
+
+                                Sin completar
+                            </span>
                         </td>
 
                         <td>
 
-                            {{ item.cantidad_aprobada }}
-                        </td>
+                            <ul class="mb-0 ps-3">
 
-                        <td>
+                                <li
 
-                            {{ item.tipo_venta }}
+                                    v-for="detalle in item.detalles"
+
+                                    :key="detalle.id"
+                                >
+
+                                    {{ detalle.producto?.nombre }}
+
+                                    ({{ detalle.cantidad }} - {{ detalle.tipo_venta }})
+                                </li>
+                            </ul>
                         </td>
 
                         <td>
@@ -105,7 +114,11 @@
 
                                     'bg-danger':
 
-                                        item.estado === 'RECHAZADO'
+                                        item.estado === 'RECHAZADO',
+
+                                    'bg-secondary':
+
+                                        item.estado === 'VENDIDO'
                                 }"
                             >
 
@@ -115,32 +128,17 @@
 
                         <td>
 
-                            <div class="d-flex gap-2">
+                            <button
 
-                                <button
+                                class="btn btn-primary btn-sm"
 
-                                    class="btn btn-success btn-sm"
+                                @click="abrirModalCompletar(item)"
 
-                                    @click="aprobar(item.id)"
+                                :disabled="item.estado !== 'PENDIENTE'"
+                            >
 
-                                    :disabled="item.estado !== 'PENDIENTE'"
-                                >
-
-                                    Aprobar
-                                </button>
-
-                                <button
-
-                                    class="btn btn-danger btn-sm"
-
-                                    @click="rechazar(item.id)"
-
-                                    :disabled="item.estado !== 'PENDIENTE'"
-                                >
-
-                                    Rechazar
-                                </button>
-                            </div>
+                                Completar / Validar
+                            </button>
                         </td>
                     </tr>
 
@@ -148,7 +146,7 @@
 
                         <td
 
-                            colspan="7"
+                            colspan="6"
 
                             class="text-center"
                         >
@@ -161,20 +159,24 @@
         </div>
     </div>
 
-    <!-- MODAL -->
+    <!--
+    |--------------------------------------------------------------------------
+    | MODAL COMPLETAR / VALIDAR
+    |--------------------------------------------------------------------------
+    -->
 
     <div
 
         class="modal fade"
 
-        id="modalNuevaValidacion"
+        id="modalCompletar"
 
         tabindex="-1"
     >
 
         <div class="modal-dialog modal-lg">
 
-            <div class="modal-content">
+            <div class="modal-content" v-if="seleccion">
 
                 <!-- HEADER -->
 
@@ -182,7 +184,7 @@
 
                     <h5 class="modal-title">
 
-                        Nueva Validación
+                        Validación #{{ seleccion.id }} — {{ seleccion.cliente?.nombre }}
                     </h5>
 
                     <button
@@ -201,58 +203,182 @@
 
                     <div class="row g-3">
 
-                        <!-- CLIENTE -->
+                        <!-- NOMBRE MEDICO -->
 
                         <div class="col-md-6">
 
                             <label class="form-label">
 
-                                Cliente
+                                Nombre del médico
                             </label>
 
-                            <select
+                            <input
 
-                                class="form-select"
+                                type="text"
 
-                                v-model="form.cliente_id"
+                                class="form-control"
+
+                                v-model="formDatos.nombre_medico"
                             >
-
-                                <option disabled value="null" >
-
-                                    Seleccione cliente
-                                </option>
-
-                                <option
-
-                                    v-for="cliente in clientes"
-
-                                    :key="cliente.id"
-
-                                    :value="cliente.id"
-                                >
-
-                                    {{ cliente.nombre }}
-                                </option>
-                            </select>
                         </div>
 
-                        <!-- PRODUCTO -->
+                        <!-- CMP MEDICO -->
 
                         <div class="col-md-6">
 
                             <label class="form-label">
 
-                                Producto
+                                CMP del médico
                             </label>
+
+                            <input
+
+                                type="text"
+
+                                class="form-control"
+
+                                v-model="formDatos.cmp_medico"
+                            >
+                        </div>
+
+                        <!-- FECHA RECETA -->
+
+                        <div class="col-md-6">
+
+                            <label class="form-label">
+
+                                Fecha de receta
+                            </label>
+
+                            <input
+
+                                type="date"
+
+                                class="form-control"
+
+                                v-model="formDatos.fecha_receta"
+                            >
+                        </div>
+
+                        <!-- INDICACIONES -->
+
+                        <div class="col-12">
+
+                            <label class="form-label">
+
+                                Indicaciones
+                            </label>
+
+                            <textarea
+
+                                class="form-control"
+
+                                rows="2"
+
+                                v-model="formDatos.indicaciones"
+                            ></textarea>
+                        </div>
+
+                        <!-- OBSERVACIONES -->
+
+                        <div class="col-12">
+
+                            <label class="form-label">
+
+                                Observaciones
+                            </label>
+
+                            <textarea
+
+                                class="form-control"
+
+                                rows="2"
+
+                                v-model="formDatos.observaciones"
+                            ></textarea>
+                        </div>
+
+                        <div class="col-12 text-end">
+
+                            <button
+
+                                class="btn btn-outline-primary btn-sm"
+
+                                @click="guardarDatos"
+                            >
+
+                                Guardar datos
+                            </button>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <!-- PRODUCTOS -->
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+
+                        <label class="form-label mb-0">
+
+                            Productos
+                        </label>
+                    </div>
+
+                    <ul class="list-group mb-3">
+
+                        <li
+
+                            v-for="detalle in seleccion.detalles"
+
+                            :key="detalle.id"
+
+                            class="list-group-item d-flex justify-content-between align-items-center"
+                        >
+
+                            {{ detalle.producto?.nombre }}
+
+                            —
+
+                            {{ detalle.cantidad }}
+
+                            ({{ detalle.tipo_venta }})
+
+                            <button
+
+                                class="btn btn-outline-danger btn-sm"
+
+                                @click="quitarProducto(detalle.id)"
+                            >
+
+                                Quitar
+                            </button>
+                        </li>
+
+                        <li
+
+                            v-if="seleccion.detalles.length === 0"
+
+                            class="list-group-item text-center text-muted"
+                        >
+
+                            Sin productos
+                        </li>
+                    </ul>
+
+                    <!-- AGREGAR PRODUCTO -->
+
+                    <div class="row g-2 align-items-end">
+
+                        <div class="col-md-5">
 
                             <select
 
                                 class="form-select"
 
-                                v-model="form.producto_id"
+                                v-model="nuevoProducto.producto_id"
                             >
 
-                                <option disabled value="null" >
+                                <option disabled value="null">
 
                                     Seleccione producto
                                 </option>
@@ -271,14 +397,7 @@
                             </select>
                         </div>
 
-                        <!-- CANTIDAD -->
-
-                        <div class="col-md-4">
-
-                            <label class="form-label">
-
-                                Cantidad
-                            </label>
+                        <div class="col-md-3">
 
                             <input
 
@@ -288,41 +407,42 @@
 
                                 min="1"
 
-                                v-model="form.cantidad"
+                                v-model="nuevoProducto.cantidad"
+
+                                placeholder="Cantidad"
                             >
                         </div>
 
-                        <!-- TIPO -->
-
-                        <div class="col-md-4">
-
-                            <label class="form-label">
-
-                                Tipo venta
-                            </label>
+                        <div class="col-md-3">
 
                             <select
 
                                 class="form-select"
 
-                                v-model="form.tipo_venta"
+                                v-model="nuevoProducto.tipo_venta"
                             >
 
-                                <option value="CAJA">
+                                <option value="CAJA">Caja</option>
 
-                                    Caja
-                                </option>
+                                <option value="BLISTER">Blister</option>
 
-                                <option value="BLISTER">
-
-                                    BLISTER
-                                </option>
-
-                                <option value="UNIDAD">
-
-                                    UNIDAD
-                                </option>
+                                <option value="UNIDAD">Unidad</option>
                             </select>
+                        </div>
+
+                        <div class="col-md-1">
+
+                            <button
+
+                                type="button"
+
+                                class="btn btn-outline-primary btn-sm"
+
+                                @click="agregarProducto"
+                            >
+
+                                +
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -338,17 +458,27 @@
                         data-bs-dismiss="modal"
                     >
 
-                        Cancelar
+                        Cerrar
                     </button>
 
                     <button
 
-                        class="btn btn-primary"
+                        class="btn btn-danger"
 
-                        @click="guardarValidacion"
+                        @click="rechazar(seleccion.id)"
                     >
 
-                        Guardar
+                        Rechazar
+                    </button>
+
+                    <button
+
+                        class="btn btn-success"
+
+                        @click="aprobar(seleccion.id)"
+                    >
+
+                        Aprobar
                     </button>
                 </div>
             </div>
@@ -370,6 +500,12 @@ import {
 
 import api from '../services/api'
 
+import {
+
+    Modal
+
+} from 'bootstrap'
+
 /*
 |--------------------------------------------------------------------------
 | ARRAYS
@@ -378,19 +514,38 @@ import api from '../services/api'
 
 const validaciones = ref([])
 
-const clientes = ref([])
-
 const productos = ref([])
+
+const seleccion = ref(null)
+
+let modalCompletar = null
 
 /*
 |--------------------------------------------------------------------------
-| FORM
+| FORM DATOS MEDICOS
 |--------------------------------------------------------------------------
 */
 
-const form = ref({
+const formDatos = ref({
 
-    cliente_id: null,
+    nombre_medico: '',
+
+    cmp_medico: '',
+
+    fecha_receta: '',
+
+    indicaciones: '',
+
+    observaciones: ''
+})
+
+/*
+|--------------------------------------------------------------------------
+| NUEVO PRODUCTO
+|--------------------------------------------------------------------------
+*/
+
+const nuevoProducto = ref({
 
     producto_id: null,
 
@@ -426,32 +581,7 @@ const obtenerValidaciones = async () => {
 
 /*
 |--------------------------------------------------------------------------
-| CLIENTES
-|--------------------------------------------------------------------------
-*/
-
-const obtenerClientes = async () => {
-
-    try {
-
-        const response = await api.get(
-
-            '/clientes'
-        )
-
-        clientes.value =
-
-            response.data.data
-
-    } catch (error) {
-
-        console.log(error)
-    }
-}
-
-/*
-|--------------------------------------------------------------------------
-| PRODUCTOS
+| PRODUCTOS (RESTRINGIDOS, PARA AGREGAR)
 |--------------------------------------------------------------------------
 */
 
@@ -464,15 +594,21 @@ const obtenerProductos = async () => {
             '/productos'
         )
 
-        /*
-        |--------------------------------------------------------------------------
-        | SOLO RESTRINGIDOS
-        |--------------------------------------------------------------------------
-        */
+        const lista =
+
+            Array.isArray(response.data.data)
+
+            ?
+
+            response.data.data
+
+            :
+
+            response.data.data.data
 
         productos.value =
 
-            response.data.data.filter(
+            lista.filter(
 
                 p => p.requiere_receta == 1
             )
@@ -485,58 +621,170 @@ const obtenerProductos = async () => {
 
 /*
 |--------------------------------------------------------------------------
-| GUARDAR
+| ABRIR MODAL COMPLETAR
 |--------------------------------------------------------------------------
 */
-const guardarValidacion = async () => {
+
+const abrirModalCompletar = (item) => {
+
+    seleccion.value = item
+
+    formDatos.value = {
+
+        nombre_medico: item.nombre_medico || '',
+
+        cmp_medico: item.cmp_medico || '',
+
+        fecha_receta: item.fecha_receta || '',
+
+        indicaciones: item.indicaciones || '',
+
+        observaciones: item.observaciones || ''
+    }
+
+    nuevoProducto.value = {
+
+        producto_id: null,
+
+        cantidad: 1,
+
+        tipo_venta: 'CAJA'
+    }
+
+    modalCompletar.show()
+}
+
+/*
+|--------------------------------------------------------------------------
+| GUARDAR DATOS MEDICOS
+|--------------------------------------------------------------------------
+*/
+
+const guardarDatos = async () => {
 
     try {
 
-        const data = {
+        const response = await api.put(
 
-            cliente_id: Number(form.value.cliente_id),
+            `/validaciones-receta/${seleccion.value.id}`,
 
-            producto_id: Number(form.value.producto_id),
+            formDatos.value
+        )
 
-            cantidad_aprobada: Number(form.value.cantidad),
-
-            tipo_venta: form.value.tipo_venta
-        }
-
-        await api.post('/validaciones-receta', data)
-
-        alert('Validación guardada')
+        seleccion.value = response.data.data
 
         await obtenerValidaciones()
 
-        form.value = {
-            cliente_id: null,
-            producto_id: null,
-            cantidad: 1,
-            tipo_venta: 'CAJA'
-        }
-
-        const modalElement = document.getElementById('modalNuevaValidacion')
-
-        if (modalElement && window.bootstrap) {
-            const modal = window.bootstrap.Modal.getInstance(modalElement)
-            if (modal) {
-                modal.hide()
-            }
-        }
+        alert('Datos guardados')
 
     } catch (error) {
 
         console.log(error)
 
-        alert('Error al guardar la validación')
+        alert(
+
+            error.response?.data?.message
+
+            ||
+
+            'Error al guardar los datos'
+        )
     }
 }
 
+/*
+|--------------------------------------------------------------------------
+| AGREGAR PRODUCTO
+|--------------------------------------------------------------------------
+*/
 
+const agregarProducto = async () => {
 
+    if (!nuevoProducto.value.producto_id) {
 
+        alert('Seleccione producto')
 
+        return
+    }
+
+    try {
+
+        const response = await api.post(
+
+            `/validaciones-receta/${seleccion.value.id}/productos`,
+
+            nuevoProducto.value
+        )
+
+        seleccion.value.detalles.push(
+
+            response.data.data
+        )
+
+        nuevoProducto.value = {
+
+            producto_id: null,
+
+            cantidad: 1,
+
+            tipo_venta: 'CAJA'
+        }
+
+        await obtenerValidaciones()
+
+    } catch (error) {
+
+        console.log(error)
+
+        alert(
+
+            error.response?.data?.message
+
+            ||
+
+            'Error al agregar producto'
+        )
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| QUITAR PRODUCTO
+|--------------------------------------------------------------------------
+*/
+
+const quitarProducto = async (detalleId) => {
+
+    try {
+
+        await api.delete(
+
+            `/validaciones-receta/${seleccion.value.id}/productos/${detalleId}`
+        )
+
+        seleccion.value.detalles =
+
+            seleccion.value.detalles.filter(
+
+                d => d.id !== detalleId
+            )
+
+        await obtenerValidaciones()
+
+    } catch (error) {
+
+        console.log(error)
+
+        alert(
+
+            error.response?.data?.message
+
+            ||
+
+            'Error al quitar producto'
+        )
+    }
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -553,11 +801,22 @@ const aprobar = async (id) => {
             `/validaciones-receta/${id}/aprobar`
         )
 
+        modalCompletar.hide()
+
         obtenerValidaciones()
 
     } catch (error) {
 
         console.log(error)
+
+        alert(
+
+            error.response?.data?.message
+
+            ||
+
+            'Error al aprobar. Verifique que los datos del médico estén completos.'
+        )
     }
 }
 
@@ -576,6 +835,8 @@ const rechazar = async (id) => {
             `/validaciones-receta/${id}/rechazar`
         )
 
+        modalCompletar.hide()
+
         obtenerValidaciones()
 
     } catch (error) {
@@ -592,16 +853,20 @@ const rechazar = async (id) => {
 
 onMounted(() => {
 
-    obtenerValidaciones()
+    modalCompletar = new Modal(
 
-    obtenerClientes()
+        document.getElementById(
+
+            'modalCompletar'
+        )
+    )
+
+    obtenerValidaciones()
 
     obtenerProductos()
 })
 
 </script>
-
-
 
 <style scoped>
 
@@ -609,18 +874,15 @@ onMounted(() => {
 /* FARMAVIDA — Bootstrap overrides                        */
 /* ===================================================== */
 
-/* Fondo de página */
 .container,
 .container-fluid {
     color: var(--white);
 }
 
-/* Títulos */
 h1, h2, h3, h4, h5 {
     color: var(--white);
 }
 
-/* Cards */
 .card {
     background: var(--navy-800);
     border: 1px solid var(--white-10);
@@ -631,7 +893,6 @@ h1, h2, h3, h4, h5 {
     background: var(--navy-800);
 }
 
-/* Tabla */
 .table {
     color: var(--white);
     border-color: var(--white-10);
@@ -650,12 +911,6 @@ h1, h2, h3, h4, h5 {
     color: var(--white);
 }
 
-.table-dark thead th {
-    background: var(--navy-700);
-    color: var(--blue-200);
-    border-color: var(--white-10);
-}
-
 .table-light thead th,
 thead.table-light th {
     background: var(--navy-700);
@@ -668,7 +923,6 @@ thead.table-light th {
     color: var(--white);
 }
 
-/* Formularios */
 .form-control,
 .form-select {
     background: var(--navy-700);
@@ -676,23 +930,10 @@ thead.table-light th {
     border: 1px solid var(--white-10);
 }
 
-.form-control::placeholder {
-    color: var(--white-30);
-}
-
-.form-control:focus,
-.form-select:focus {
-    background: var(--navy-700);
-    color: var(--white);
-    border-color: var(--blue-500);
-    box-shadow: 0 0 0 0.2rem var(--blue-glow);
-}
-
 .form-label {
     color: var(--white-80);
 }
 
-/* Modal */
 .modal-content {
     background: var(--navy-800);
     border: 1px solid var(--white-10);
@@ -707,41 +948,14 @@ thead.table-light th {
     border-top: 1px solid var(--white-10);
 }
 
-.modal-title {
+.list-group-item {
+    background: var(--navy-700);
     color: var(--white);
+    border-color: var(--white-10);
 }
 
 .btn-close {
     filter: invert(1) brightness(2);
-}
-
-/* Botones */
-.btn-primary {
-    background: var(--blue-500);
-    border-color: var(--blue-500);
-}
-
-.btn-primary:hover {
-    background: var(--blue-400);
-    border-color: var(--blue-400);
-}
-
-.btn-secondary {
-    background: var(--navy-600);
-    border-color: var(--navy-600);
-    color: var(--white-80);
-}
-
-.btn-secondary:hover {
-    background: var(--navy-700);
-    border-color: var(--navy-700);
-    color: var(--white);
-}
-
-/* Select options */
-select option {
-    background: var(--navy-800);
-    color: var(--white);
 }
 
 </style>

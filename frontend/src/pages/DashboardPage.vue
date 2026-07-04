@@ -6,51 +6,24 @@
       No se pudieron cargar los datos del dashboard. Intenta recargar la página.
     </div>
 
+    <!-- Stats Cards -->
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-10">
-
-      <div class="bg-navy-800 border border-white/10 rounded-2xl shadow p-6">
-        <p class="text-blue-200">Ventas (hoy)</p>
-        <h2 class="text-4xl font-bold mt-4 text-white">
+      <div 
+        v-for="(stat, index) in stats" 
+        :key="index"
+        class="bg-navy-800 border border-white/10 rounded-2xl shadow p-6 transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl"
+        :style="{ animationDelay: `${index * 80}ms` }"
+      >
+        <p class="text-blue-200">{{ stat.title }}</p>
+        <h2 class="text-4xl font-bold mt-4 text-white transition-all">
           <span v-if="loading" class="text-white/30">···</span>
-          <span v-else>{{ ventasFormateadas }}</span>
+          <span v-else class="fade-in">{{ stat.value }}</span>
         </h2>
       </div>
-
-      <div class="bg-navy-800 border border-white/10 rounded-2xl shadow p-6">
-        <p class="text-blue-200">N° de Ventas (hoy)</p>
-        <h2 class="text-4xl font-bold mt-4 text-white">
-          <span v-if="loading" class="text-white/30">···</span>
-          <span v-else>{{ numeroVentas }}</span>
-        </h2>
-      </div>
-
-      <div class="bg-navy-800 border border-white/10 rounded-2xl shadow p-6">
-        <p class="text-blue-200">Productos</p>
-        <h2 class="text-4xl font-bold mt-4 text-white">
-          <span v-if="loading" class="text-white/30">···</span>
-          <span v-else>{{ productos }}</span>
-        </h2>
-      </div>
-
-      <div class="bg-navy-800 border border-white/10 rounded-2xl shadow p-6">
-        <p class="text-blue-200">Clientes</p>
-        <h2 class="text-4xl font-bold mt-4 text-white">
-          <span v-if="loading" class="text-white/30">···</span>
-          <span v-else>{{ clientes }}</span>
-        </h2>
-      </div>
-
-      <div class="bg-navy-800 border border-white/10 rounded-2xl shadow p-6">
-        <p class="text-blue-200">Stock Crítico</p>
-        <h2 class="text-4xl font-bold mt-4 text-red-400">
-          <span v-if="loading" class="text-white/30">···</span>
-          <span v-else>{{ stockCritico }}</span>
-        </h2>
-      </div>
-
     </div>
 
-    <div class="bg-navy-800 border border-white/10 rounded-2xl shadow p-6">
+    <!-- Gráfico -->
+    <div class="bg-navy-800 border border-white/10 rounded-2xl shadow p-6 transition-all duration-700">
       <apexchart
         type="bar"
         height="350"
@@ -84,13 +57,33 @@ const ventasFormateadas = computed(() =>
 
 /*
 |--------------------------------------------------------------------------
+| STATS ARRAY (para animaciones)
+|--------------------------------------------------------------------------
+*/
+const stats = computed(() => [
+  { title: 'Ventas (hoy)', value: ventasFormateadas.value },
+  { title: 'N° de Ventas (hoy)', value: numeroVentas.value },
+  { title: 'Productos', value: productos.value },
+  { title: 'Clientes', value: clientes.value },
+  { title: 'Stock Crítico', value: stockCritico.value, color: 'text-red-400' }
+])
+
+/*
+|--------------------------------------------------------------------------
 | CHART
 |--------------------------------------------------------------------------
 */
 const series = ref([{ name: 'Ventas', data: [] }])
-
 const chartOptions = ref({
-  chart: { id: 'ventas', background: 'transparent' },
+  chart: { 
+    id: 'ventas', 
+    background: 'transparent',
+    animations: {
+      enabled: true,
+      easing: 'easeinout',
+      speed: 800
+    }
+  },
   theme: { mode: 'dark' },
   xaxis: { categories: [] },
   yaxis: {
@@ -114,10 +107,8 @@ const chartOptions = ref({
 const loadData = async () => {
   loading.value = true
   error.value = false
-
   try {
     const response = await api.get('/dashboard')
-
     ventas.value = response.data.ventas || 0
     numeroVentas.value = response.data.numero_ventas || 0
     productos.value = response.data.productos || 0
@@ -143,3 +134,25 @@ onMounted(() => {
   loadData()
 })
 </script>
+
+<style scoped>
+.fade-in {
+  animation: fadeInUp 0.6s ease forwards;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hover suave en tarjetas */
+div[class*="bg-navy-800"] {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+</style>

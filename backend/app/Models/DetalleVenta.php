@@ -13,6 +13,8 @@ class DetalleVenta extends Model
 
         'venta_id',
 
+        'validacion_receta_id',
+
         'producto_id',
 
         'tipo_venta',
@@ -45,6 +47,15 @@ class DetalleVenta extends Model
         return $this->belongsTo(
 
             Producto::class
+        );
+    }
+
+    public function validacionReceta()
+    {
+
+        return $this->belongsTo(
+
+            ValidacionReceta::class
         );
     }
 }

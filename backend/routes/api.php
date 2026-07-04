@@ -208,7 +208,24 @@ Route::middleware('auth:sanctum')->group(function () {
             'rechazar'
         ]
     );
+    Route::put(
+        '/validaciones-receta/{id}',
+        [ValidacionRecetaController::class, 'actualizarDatos']
+    );
 
+    Route::post(
+        '/validaciones-receta/{id}/productos',
+        [ValidacionRecetaController::class, 'agregarProducto']
+    );
+
+    Route::delete(
+        '/validaciones-receta/{id}/productos/{detalleId}',
+        [ValidacionRecetaController::class, 'quitarProducto']
+    );
+    Route::get(
+        '/validaciones-receta/pendientes-venta',
+        [ValidacionRecetaController::class, 'pendientesVenta']
+    );
     /*
     |--------------------------------------------------------------------------
     | SOLICITUDES RECETA
